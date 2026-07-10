@@ -1,53 +1,138 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  FilterBar,
+  type ApplicationFilter,
+  type DifficultyFilter,
+} from "./components/FilterBar";
 import { ShortcutCard } from "./components/ShortcutCard";
 import { shortcuts } from "./data/shortcuts";
-import { getRandomIndex } from "./utils/shortcutSelection";
+import type { Shortcut } from "./types/shortcut";
+import { getRandomItem } from "./utils/shortcutSelection";
 
-function createInitialShortcutIndex() {
-  if (shortcuts.length === 0) {
-    return 0;
+function getInitialShortcutId() {
+  return getRandomItem(shortcuts)?.id ?? null;
+}
+
+function findShortcutById(
+  shortcutCollection: readonly Shortcut[],
+  shortcutId: string | null,
+) {
+  if (!shortcutId) {
+    return undefined;
   }
 
-  return getRandomIndex(shortcuts.length);
+  return shortcutCollection.find((shortcut) => shortcut.id === shortcutId);
 }
 
 export default function App() {
-  const [currentShortcutIndex, setCurrentShortcutIndex] = useState(
-    createInitialShortcutIndex,
+  const [applicationFilter, setApplicationFilter] =
+    useState<ApplicationFilter>("all");
+
+  const [difficultyFilter, setDifficultyFilter] =
+    useState<DifficultyFilter>("all");
+
+  const [currentShortcutId, setCurrentShortcutId] = useState<string | null>(
+    getInitialShortcutId,
   );
 
-  const [shortcutHistory, setShortcutHistory] = useState<number[]>([]);
+  const [shortcutHistory, setShortcutHistory] = useState<string[]>([]);
 
-  const currentShortcut = shortcuts[currentShortcutIndex];
+  const filteredShortcuts = useMemo(() => {
+    return shortcuts.filter((shortcut) => {
+      const matchesApplication =
+        applicationFilter === "all" ||
+        shortcut.application === applicationFilter;
+
+      const matchesDifficulty =
+        difficultyFilter === "all" || shortcut.difficulty === difficultyFilter;
+
+      return matchesApplication && matchesDifficulty;
+    });
+  }, [applicationFilter, difficultyFilter]);
+
+  const currentShortcut =
+    findShortcutById(filteredShortcuts, currentShortcutId) ??
+    filteredShortcuts[0];
+
+  const currentShortcutIndex = currentShortcut
+    ? filteredShortcuts.findIndex(
+        (shortcut) => shortcut.id === currentShortcut.id,
+      )
+    : -1;
+
+  const selectShortcutForFilters = useCallback(
+    (nextApplication: ApplicationFilter, nextDifficulty: DifficultyFilter) => {
+      const matchingShortcuts = shortcuts.filter((shortcut) => {
+        const matchesApplication =
+          nextApplication === "all" || shortcut.application === nextApplication;
+
+        const matchesDifficulty =
+          nextDifficulty === "all" || shortcut.difficulty === nextDifficulty;
+
+        return matchesApplication && matchesDifficulty;
+      });
+
+      const nextShortcut = getRandomItem(matchingShortcuts);
+
+      setCurrentShortcutId(nextShortcut?.id ?? null);
+      setShortcutHistory([]);
+    },
+    [],
+  );
+
+  const handleApplicationChange = useCallback(
+    (nextApplication: ApplicationFilter) => {
+      setApplicationFilter(nextApplication);
+
+      selectShortcutForFilters(nextApplication, difficultyFilter);
+    },
+    [difficultyFilter, selectShortcutForFilters],
+  );
+
+  const handleDifficultyChange = useCallback(
+    (nextDifficulty: DifficultyFilter) => {
+      setDifficultyFilter(nextDifficulty);
+
+      selectShortcutForFilters(applicationFilter, nextDifficulty);
+    },
+    [applicationFilter, selectShortcutForFilters],
+  );
+
+  const handleResetFilters = useCallback(() => {
+    setApplicationFilter("all");
+    setDifficultyFilter("all");
+    selectShortcutForFilters("all", "all");
+  }, [selectShortcutForFilters]);
 
   const handleNextShortcut = useCallback(() => {
-    if (shortcuts.length <= 1) {
+    if (!currentShortcut || filteredShortcuts.length <= 1) {
       return;
     }
 
-    const nextShortcutIndex = getRandomIndex(
-      shortcuts.length,
-      currentShortcutIndex,
-    );
+    const nextShortcut = getRandomItem(filteredShortcuts, currentShortcut);
+
+    if (!nextShortcut) {
+      return;
+    }
 
     setShortcutHistory((currentHistory) => [
       ...currentHistory,
-      currentShortcutIndex,
+      currentShortcut.id,
     ]);
 
-    setCurrentShortcutIndex(nextShortcutIndex);
-  }, [currentShortcutIndex]);
+    setCurrentShortcutId(nextShortcut.id);
+  }, [currentShortcut, filteredShortcuts]);
 
   const handlePreviousShortcut = useCallback(() => {
     setShortcutHistory((currentHistory) => {
-      const previousShortcutIndex = currentHistory[currentHistory.length - 1];
+      const previousShortcutId = currentHistory[currentHistory.length - 1];
 
-      if (previousShortcutIndex === undefined) {
+      if (!previousShortcutId) {
         return currentHistory;
       }
 
-      setCurrentShortcutIndex(previousShortcutIndex);
+      setCurrentShortcutId(previousShortcutId);
 
       return currentHistory.slice(0, -1);
     });
@@ -90,26 +175,6 @@ export default function App() {
     };
   }, [handleNextShortcut, handlePreviousShortcut]);
 
-  if (!currentShortcut) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-background px-4 text-text-primary">
-        <section className="w-full max-w-xl border border-border bg-surface p-6">
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-warning">
-            no shortcuts found
-          </p>
-
-          <h1 className="mt-3 text-xl font-semibold">
-            The shortcut collection is empty.
-          </h1>
-
-          <p className="mt-3 text-sm leading-6 text-text-secondary">
-            Add at least one shortcut to the local shortcut data file.
-          </p>
-        </section>
-      </main>
-    );
-  }
-
   return (
     <div className="flex min-h-screen flex-col bg-background text-text-primary">
       <header className="border-b border-border">
@@ -131,52 +196,104 @@ export default function App() {
               aria-hidden="true"
             />
 
-            <span>{shortcuts.length} shortcuts loaded</span>
+            <span>{filteredShortcuts.length} shortcuts available</span>
           </div>
         </div>
       </header>
 
       <main className="mx-auto flex w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
         <div className="flex w-full flex-col justify-center">
-          <div className="sr-only" aria-live="polite" aria-atomic="true">
-            Showing {currentShortcut.title} for{" "}
-            {currentShortcut.applicationLabel}
-          </div>
-
-          <ShortcutCard
-            shortcut={currentShortcut}
-            shortcutNumber={currentShortcutIndex + 1}
-            totalShortcuts={shortcuts.length}
-            operatingSystem="windows"
-            canGoPrevious={shortcutHistory.length > 0}
-            onPrevious={handlePreviousShortcut}
-            onNext={handleNextShortcut}
+          <FilterBar
+            application={applicationFilter}
+            difficulty={difficultyFilter}
+            resultCount={filteredShortcuts.length}
+            totalCount={shortcuts.length}
+            onApplicationChange={handleApplicationChange}
+            onDifficultyChange={handleDifficultyChange}
+            onReset={handleResetFilters}
           />
 
-          <div className="mt-5 flex flex-col gap-3 text-xs text-text-muted sm:flex-row sm:items-center sm:justify-between">
-            <p>
-              <span className="text-text-secondary">tip:</span> build speed one
-              command at a time
-            </p>
+          {currentShortcut ? (
+            <>
+              <div className="sr-only" aria-live="polite" aria-atomic="true">
+                Showing {currentShortcut.title} for{" "}
+                {currentShortcut.applicationLabel}. {filteredShortcuts.length}{" "}
+                shortcuts match the selected filters.
+              </div>
 
-            <div className="hidden items-center gap-4 md:flex">
-              <p>
-                press{" "}
-                <kbd className="border border-border-strong bg-surface px-1.5 py-0.5 text-text-secondary">
-                  P
-                </kbd>{" "}
-                for previous
+              <ShortcutCard
+                shortcut={currentShortcut}
+                shortcutNumber={currentShortcutIndex + 1}
+                totalShortcuts={filteredShortcuts.length}
+                operatingSystem="windows"
+                canGoPrevious={shortcutHistory.length > 0}
+                onPrevious={handlePreviousShortcut}
+                onNext={handleNextShortcut}
+              />
+
+              <div className="mt-5 flex flex-col gap-3 text-xs text-text-muted sm:flex-row sm:items-center sm:justify-between">
+                <p>
+                  <span className="text-text-secondary">tip:</span> filters keep
+                  discovery focused
+                </p>
+
+                <div className="hidden items-center gap-4 md:flex">
+                  <p>
+                    press{" "}
+                    <kbd className="border border-border-strong bg-surface px-1.5 py-0.5 text-text-secondary">
+                      P
+                    </kbd>{" "}
+                    for previous
+                  </p>
+
+                  <p>
+                    press{" "}
+                    <kbd className="border border-border-strong bg-surface px-1.5 py-0.5 text-text-secondary">
+                      N
+                    </kbd>{" "}
+                    for next
+                  </p>
+                </div>
+              </div>
+            </>
+          ) : (
+            <section
+              className="border border-border bg-surface px-5 py-10 sm:px-7 lg:px-10"
+              aria-labelledby="empty-filter-title"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-warning">
+                no matches
               </p>
 
-              <p>
-                press{" "}
-                <kbd className="border border-border-strong bg-surface px-1.5 py-0.5 text-text-secondary">
-                  N
-                </kbd>{" "}
-                for next
+              <h1
+                id="empty-filter-title"
+                className="mt-3 max-w-2xl text-2xl font-semibold leading-tight text-text-primary sm:text-3xl"
+              >
+                No shortcuts match these filters.
+              </h1>
+
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-text-secondary">
+                Try another application or difficulty level, or reset the
+                filters to return to the complete shortcut collection.
               </p>
-            </div>
-          </div>
+
+              <button
+                type="button"
+                className={[
+                  "mt-6 min-h-11 border border-accent px-4 py-2.5",
+                  "text-sm font-semibold text-accent",
+                  "transition-colors",
+                  "hover:bg-accent hover:text-background",
+                  "focus-visible:outline-none focus-visible:ring-2",
+                  "focus-visible:ring-accent focus-visible:ring-offset-2",
+                  "focus-visible:ring-offset-background",
+                ].join(" ")}
+                onClick={handleResetFilters}
+              >
+                reset filters
+              </button>
+            </section>
+          )}
         </div>
       </main>
 

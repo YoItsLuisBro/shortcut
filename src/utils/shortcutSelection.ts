@@ -18,3 +18,30 @@ export function getRandomIndex(
 
   return nextIndex;
 }
+
+export function getRandomItem<T>(
+  items: readonly T[],
+  excludedItem?: T,
+): T | undefined {
+  if (items.length === 0) {
+    return undefined;
+  }
+
+  if (items.length === 1) {
+    return items[0];
+  }
+
+  let excludedIndex: number | undefined;
+
+  if (excludedItem !== undefined) {
+    const foundIndex = items.indexOf(excludedItem);
+
+    if (foundIndex >= 0) {
+      excludedIndex = foundIndex;
+    }
+  }
+
+  const randomIndex = getRandomIndex(items.length, excludedIndex);
+
+  return items[randomIndex];
+}
