@@ -7,6 +7,9 @@ interface ShortcutCardProps {
   shortcutNumber: number;
   totalShortcuts: number;
   operatingSystem: OperatingSystem;
+  canGoPrevious: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
 }
 
 const actionButtonClasses = [
@@ -16,6 +19,8 @@ const actionButtonClasses = [
   "hover:border-border-strong hover:bg-surface-hover hover:text-text-primary",
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
   "focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+  "disabled:cursor-not-allowed disabled:text-text-muted disabled:opacity-50",
+  "disabled:hover:border-border disabled:hover:bg-transparent",
 ].join(" ");
 
 function formatShortcutNumber(value: number) {
@@ -38,6 +43,9 @@ export function ShortcutCard({
   shortcutNumber,
   totalShortcuts,
   operatingSystem,
+  canGoPrevious,
+  onPrevious,
+  onNext,
 }: ShortcutCardProps) {
   const activeKeySet =
     shortcut.keys.find(
@@ -191,15 +199,44 @@ export function ShortcutCard({
             practice
           </button>
 
-          <button
-            type="button"
-            className="min-h-11 border-0 bg-accent px-4 py-2.5 text-sm font-semibold text-background transition-colors hover:bg-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:ml-auto sm:min-w-32"
-          >
-            next
-            <span className="ml-2" aria-hidden="true">
-              →
-            </span>
-          </button>
+          <div className="grid grid-cols-2 sm:ml-auto">
+            <button
+              type="button"
+              className={[
+                actionButtonClasses,
+                "border-b-0 border-l-0 border-r",
+                "sm:min-w-28",
+              ].join(" ")}
+              onClick={onPrevious}
+              disabled={!canGoPrevious}
+              aria-label="Show previous shortcut"
+            >
+              <span className="mr-2" aria-hidden="true">
+                ←
+              </span>
+              previous
+            </button>
+
+            <button
+              type="button"
+              className={[
+                "min-h-11 border-0 bg-accent px-4 py-2.5",
+                "text-sm font-semibold text-background",
+                "transition-colors hover:bg-accent-muted",
+                "focus-visible:outline-none focus-visible:ring-2",
+                "focus-visible:ring-accent focus-visible:ring-offset-2",
+                "focus-visible:ring-offset-background",
+                "sm:min-w-28",
+              ].join(" ")}
+              onClick={onNext}
+              aria-label="Show next random shortcut"
+            >
+              next
+              <span className="ml-2" aria-hidden="true">
+                →
+              </span>
+            </button>
+          </div>
         </div>
       </article>
     </section>
