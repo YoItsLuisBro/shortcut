@@ -8,6 +8,11 @@ import {
   loadDiscoveryPreferences,
   saveDiscoveryPreferences,
 } from "./storage/discoveryPreferences";
+import {
+  getShortcutUserState,
+  loadShortcutUserState,
+  saveShortcutUserState,
+} from "./storage/shortcutUserState";
 import type {
   ApplicationFilter,
   DifficultyFilter,
@@ -15,14 +20,23 @@ import type {
   OperatingSystemFilter,
 } from "./types/preferences";
 import type { OperatingSystem, Shortcut } from "./types/shortcut";
+import type {
+  LearningStatus,
+  ShortcutUserStateMap,
+} from "./types/shortcutState";
 import { getRandomItem } from "./utils/shortcutSelection";
 
-function getInitialPreferences() {
-  return loadDiscoveryPreferences();
-}
-
-function getMatchingShortcuts(preferences: DiscoveryPreferences) {
+function getMatchingShortcuts(
+  preferences: DiscoveryPreferences,
+  userStateMap: ShortcutUserStateMap,
+) {
   return shortcuts.filter((shortcut) => {
+    const userState = getShortcutUserState(userStateMap, shortcut.id);
+
+    if (userState.hidden) {
+      return false;
+    }
+
     const matchesApplication =
       preferences.application === "all" ||
       shortcut.application === preferences.application;
@@ -41,11 +55,15 @@ function getMatchingShortcuts(preferences: DiscoveryPreferences) {
 }
 
 function getInitialState() {
-  const preferences = getInitialPreferences();
-  const matchingShortcuts = getMatchingShortcuts(preferences);
+  const preferences = loadDiscoveryPreferences();
+
+  const userStateMap = loadShortcutUserState();
+
+  const matchingShortcuts = getMatchingShortcuts(preferences, userStateMap);
 
   return {
     preferences,
+    userStateMap,
     shortcutId: getRandomItem(matchingShortcuts)?.id ?? null,
   };
 }
@@ -90,6 +108,10 @@ export default function App() {
     initialState.preferences,
   );
 
+  const [userStateMap, setUserStateMap] = useState<ShortcutUserStateMap>(
+    initialState.userStateMap,
+  );
+
   const [currentShortcutId, setCurrentShortcutId] = useState<string | null>(
     initialState.shortcutId,
   );
@@ -97,8 +119,8 @@ export default function App() {
   const [shortcutHistory, setShortcutHistory] = useState<string[]>([]);
 
   const filteredShortcuts = useMemo(
-    () => getMatchingShortcuts(preferences),
-    [preferences],
+    () => getMatchingShortcuts(preferences, userStateMap),
+    [preferences, userStateMap],
   );
 
   const currentShortcut =
@@ -111,17 +133,32 @@ export default function App() {
       )
     : -1;
 
+  const currentUserState = currentShortcut
+    ? getShortcutUserState(userStateMap, currentShortcut.id)
+    : null;
+
   const displayOperatingSystem = currentShortcut
     ? getDisplayOperatingSystem(currentShortcut, preferences.operatingSystem)
     : "universal";
+
+  const visibleShortcutCount = shortcuts.filter((shortcut) => {
+    return !getShortcutUserState(userStateMap, shortcut.id).hidden;
+  }).length;
 
   useEffect(() => {
     saveDiscoveryPreferences(preferences);
   }, [preferences]);
 
+  useEffect(() => {
+    saveShortcutUserState(userStateMap);
+  }, [userStateMap]);
+
   const applyPreferences = useCallback(
     (nextPreferences: DiscoveryPreferences) => {
-      const matchingShortcuts = getMatchingShortcuts(nextPreferences);
+      const matchingShortcuts = getMatchingShortcuts(
+        nextPreferences,
+        userStateMap,
+      );
 
       const nextShortcut = getRandomItem(matchingShortcuts);
 
@@ -129,7 +166,7 @@ export default function App() {
       setCurrentShortcutId(nextShortcut?.id ?? null);
       setShortcutHistory([]);
     },
-    [],
+    [userStateMap],
   );
 
   const handleApplicationChange = useCallback(
@@ -166,6 +203,74 @@ export default function App() {
     applyPreferences(defaultDiscoveryPreferences);
   }, [applyPreferences]);
 
+  const updateCurrentShortcutState = useCallback(
+    (
+      updater: (
+        currentState: ReturnType<typeof getShortcutUserState>,
+      ) => ReturnType<typeof getShortcutUserState>,
+    ) => {
+      if (!currentShortcut) {
+        return;
+      }
+
+      setUserStateMap((currentStateMap) => {
+        const existingState = getShortcutUserState(
+          currentStateMap,
+          currentShortcut.id,
+        );
+
+        return {
+          ...currentStateMap,
+          [currentShortcut.id]: updater(existingState),
+        };
+      });
+    },
+    [currentShortcut],
+  );
+
+  const handleToggleSaved = useCallback(() => {
+    updateCurrentShortcutState((currentState) => ({
+      ...currentState,
+      saved: !currentState.saved,
+    }));
+  }, [updateCurrentShortcutState]);
+
+  const handleSetLearningStatus = useCallback(
+    (status: LearningStatus) => {
+      updateCurrentShortcutState((currentState) => ({
+        ...currentState,
+        learningStatus: status,
+      }));
+    },
+    [updateCurrentShortcutState],
+  );
+
+  const handleHideShortcut = useCallback(() => {
+    if (!currentShortcut) {
+      return;
+    }
+
+    const remainingShortcuts = filteredShortcuts.filter(
+      (shortcut) => shortcut.id !== currentShortcut.id,
+    );
+
+    const nextShortcut = getRandomItem(remainingShortcuts);
+
+    setUserStateMap((currentStateMap) => ({
+      ...currentStateMap,
+      [currentShortcut.id]: {
+        ...getShortcutUserState(currentStateMap, currentShortcut.id),
+        hidden: true,
+      },
+    }));
+
+    setShortcutHistory((currentHistory) =>
+      currentHistory.filter((shortcutId) => shortcutId !== currentShortcut.id),
+    );
+
+    setCurrentShortcutId(nextShortcut?.id ?? null);
+  }, [currentShortcut, filteredShortcuts]);
+
   const handleNextShortcut = useCallback(() => {
     if (!currentShortcut || filteredShortcuts.length <= 1) {
       return;
@@ -193,11 +298,20 @@ export default function App() {
         return currentHistory;
       }
 
-      setCurrentShortcutId(previousShortcutId);
+      const previousShortcut = findShortcutById(
+        filteredShortcuts,
+        previousShortcutId,
+      );
+
+      if (!previousShortcut) {
+        return currentHistory.slice(0, -1);
+      }
+
+      setCurrentShortcutId(previousShortcut.id);
 
       return currentHistory.slice(0, -1);
     });
-  }, []);
+  }, [filteredShortcuts]);
 
   useEffect(() => {
     function handleKeyboardNavigation(event: KeyboardEvent) {
@@ -227,6 +341,27 @@ export default function App() {
         event.preventDefault();
         handlePreviousShortcut();
       }
+
+      if (pressedKey === "s") {
+        event.preventDefault();
+        handleToggleSaved();
+      }
+
+      if (pressedKey === "k") {
+        event.preventDefault();
+
+        handleSetLearningStatus(
+          currentUserState?.learningStatus === "known" ? null : "known",
+        );
+      }
+
+      if (pressedKey === "l") {
+        event.preventDefault();
+
+        handleSetLearningStatus(
+          currentUserState?.learningStatus === "learning" ? null : "learning",
+        );
+      }
     }
 
     window.addEventListener("keydown", handleKeyboardNavigation);
@@ -234,7 +369,13 @@ export default function App() {
     return () => {
       window.removeEventListener("keydown", handleKeyboardNavigation);
     };
-  }, [handleNextShortcut, handlePreviousShortcut]);
+  }, [
+    currentUserState,
+    handleNextShortcut,
+    handlePreviousShortcut,
+    handleSetLearningStatus,
+    handleToggleSaved,
+  ]);
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-text-primary">
@@ -269,14 +410,14 @@ export default function App() {
             difficulty={preferences.difficulty}
             operatingSystem={preferences.operatingSystem}
             resultCount={filteredShortcuts.length}
-            totalCount={shortcuts.length}
+            totalCount={visibleShortcutCount}
             onApplicationChange={handleApplicationChange}
             onDifficultyChange={handleDifficultyChange}
             onOperatingSystemChange={handleOperatingSystemChange}
             onReset={handleResetFilters}
           />
 
-          {currentShortcut ? (
+          {currentShortcut && currentUserState ? (
             <>
               <div className="sr-only" aria-live="polite" aria-atomic="true">
                 Showing {currentShortcut.title} for{" "}
@@ -289,33 +430,35 @@ export default function App() {
                 shortcutNumber={currentShortcutIndex + 1}
                 totalShortcuts={filteredShortcuts.length}
                 operatingSystem={displayOperatingSystem}
+                userState={currentUserState}
                 canGoPrevious={shortcutHistory.length > 0}
                 canGoNext={filteredShortcuts.length > 1}
+                onToggleSaved={handleToggleSaved}
+                onSetLearningStatus={handleSetLearningStatus}
+                onHide={handleHideShortcut}
                 onPrevious={handlePreviousShortcut}
                 onNext={handleNextShortcut}
               />
 
               <div className="mt-5 flex flex-col gap-3 text-xs text-text-muted sm:flex-row sm:items-center sm:justify-between">
                 <p>
-                  <span className="text-text-secondary">tip:</span> your filters
-                  are saved locally
+                  <span className="text-text-secondary">keys:</span> S save · K
+                  known · L learning
                 </p>
 
                 <div className="hidden items-center gap-4 md:flex">
                   <p>
-                    press{" "}
                     <kbd className="border border-border-strong bg-surface px-1.5 py-0.5 text-text-secondary">
                       P
                     </kbd>{" "}
-                    for previous
+                    previous
                   </p>
 
                   <p>
-                    press{" "}
                     <kbd className="border border-border-strong bg-surface px-1.5 py-0.5 text-text-secondary">
                       N
                     </kbd>{" "}
-                    for next
+                    next
                   </p>
                 </div>
               </div>
@@ -333,12 +476,13 @@ export default function App() {
                 id="empty-filter-title"
                 className="mt-3 max-w-2xl text-2xl font-semibold leading-tight text-text-primary sm:text-3xl"
               >
-                No shortcuts match these filters.
+                No visible shortcuts match these filters.
               </h1>
 
               <p className="mt-4 max-w-2xl text-sm leading-7 text-text-secondary">
-                Try another application, difficulty, or operating system, or
-                reset the filters to return to the default Windows collection.
+                Try another application, difficulty, or operating system. Hidden
+                shortcuts will remain excluded until a future library management
+                step adds restore controls.
               </p>
 
               <button
@@ -365,7 +509,9 @@ export default function App() {
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 text-xs text-text-muted sm:px-6 lg:px-8">
           <p>discover → practice → remember</p>
 
-          <p className="hidden sm:block">history {shortcutHistory.length}</p>
+          <p className="hidden sm:block">
+            visible {visibleShortcutCount} · history {shortcutHistory.length}
+          </p>
         </div>
       </footer>
     </div>

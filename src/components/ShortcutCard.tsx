@@ -1,4 +1,5 @@
 import type { OperatingSystem, Shortcut } from "../types/shortcut";
+import type { LearningStatus, ShortcutUserState } from "../types/shortcutState";
 
 import { Keycap } from "./Keycap";
 
@@ -7,21 +8,36 @@ interface ShortcutCardProps {
   shortcutNumber: number;
   totalShortcuts: number;
   operatingSystem: OperatingSystem;
+  userState: ShortcutUserState;
   canGoPrevious: boolean;
   canGoNext: boolean;
+  onToggleSaved: () => void;
+  onSetLearningStatus: (status: LearningStatus) => void;
+  onHide: () => void;
   onPrevious: () => void;
   onNext: () => void;
 }
 
 const actionButtonClasses = [
-  "min-h-11 border border-border bg-transparent px-4 py-2.5",
-  "text-sm font-medium text-text-secondary",
-  "transition-colors",
-  "hover:border-border-strong hover:bg-surface-hover hover:text-text-primary",
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-  "focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-  "disabled:cursor-not-allowed disabled:text-text-muted disabled:opacity-50",
-  "disabled:hover:border-border disabled:hover:bg-transparent",
+  "min-h-11 border border-border px-4 py-2.5",
+  "text-sm font-medium transition-colors",
+  "focus-visible:outline-none focus-visible:ring-2",
+  "focus-visible:ring-accent focus-visible:ring-offset-2",
+  "focus-visible:ring-offset-background",
+  "disabled:cursor-not-allowed disabled:text-text-muted",
+  "disabled:opacity-50 disabled:hover:border-border",
+  "disabled:hover:bg-transparent",
+].join(" ");
+
+const inactiveActionClasses = [
+  "bg-transparent text-text-secondary",
+  "hover:border-border-strong hover:bg-surface-hover",
+  "hover:text-text-primary",
+].join(" ");
+
+const activeActionClasses = [
+  "border-accent bg-accent text-background",
+  "hover:bg-accent-muted hover:text-background",
 ].join(" ");
 
 function formatShortcutNumber(value: number) {
@@ -39,13 +55,24 @@ function formatOperatingSystem(operatingSystem: OperatingSystem) {
   return labels[operatingSystem];
 }
 
+function getActionClasses(isActive: boolean) {
+  return [
+    actionButtonClasses,
+    isActive ? activeActionClasses : inactiveActionClasses,
+  ].join(" ");
+}
+
 export function ShortcutCard({
   shortcut,
   shortcutNumber,
   totalShortcuts,
   operatingSystem,
+  userState,
   canGoPrevious,
   canGoNext,
+  onToggleSaved,
+  onSetLearningStatus,
+  onHide,
   onPrevious,
   onNext,
 }: ShortcutCardProps) {
@@ -80,6 +107,10 @@ export function ShortcutCard({
 
   const keyCombinationLabel = activeKeySet.keys.join(" plus ");
 
+  const isKnown = userState.learningStatus === "known";
+
+  const isLearning = userState.learningStatus === "learning";
+
   return (
     <section aria-labelledby="shortcut-title">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -87,9 +118,23 @@ export function ShortcutCard({
           shortcut {formattedShortcutNumber}
         </p>
 
-        <p className="text-xs uppercase tracking-[0.18em] text-text-muted">
-          {formattedShortcutNumber} / {formattedTotal}
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          {userState.saved && (
+            <span className="text-xs font-medium uppercase tracking-[0.14em] text-accent">
+              saved
+            </span>
+          )}
+
+          {userState.learningStatus && (
+            <span className="text-xs font-medium uppercase tracking-[0.14em] text-text-secondary">
+              {userState.learningStatus}
+            </span>
+          )}
+
+          <p className="text-xs uppercase tracking-[0.18em] text-text-muted">
+            {formattedShortcutNumber} / {formattedTotal}
+          </p>
+        </div>
       </div>
 
       <article className="border border-border bg-surface">
@@ -179,35 +224,69 @@ export function ShortcutCard({
           </dl>
         </div>
 
-        <div className="grid grid-cols-2 border-t border-border sm:flex sm:flex-wrap">
+        <div className="grid grid-cols-2 border-t border-border sm:grid-cols-4 lg:flex lg:flex-wrap">
           <button
             type="button"
-            className={`${actionButtonClasses} border-l-0 border-t-0 sm:border-b-0`}
+            className={[
+              getActionClasses(isKnown),
+              "border-l-0 border-t-0",
+              "sm:border-b-0",
+            ].join(" ")}
+            onClick={() => onSetLearningStatus(isKnown ? null : "known")}
+            aria-pressed={isKnown}
           >
-            know it
+            {isKnown ? "known" : "know it"}
           </button>
 
           <button
             type="button"
-            className={`${actionButtonClasses} border-r-0 border-t-0 sm:border-b-0 sm:border-r`}
+            className={[
+              getActionClasses(userState.saved),
+              "border-r-0 border-t-0",
+              "sm:border-b-0 sm:border-r",
+            ].join(" ")}
+            onClick={onToggleSaved}
+            aria-pressed={userState.saved}
           >
-            save
+            {userState.saved ? "saved" : "save"}
           </button>
 
           <button
             type="button"
-            className={`${actionButtonClasses} border-b-0 border-l-0 sm:border-r`}
+            className={[
+              getActionClasses(isLearning),
+              "border-b-0 border-l-0",
+              "sm:border-r",
+            ].join(" ")}
+            onClick={() => onSetLearningStatus(isLearning ? null : "learning")}
+            aria-pressed={isLearning}
           >
-            practice
+            {isLearning ? "learning" : "learn"}
           </button>
 
-          <div className="grid grid-cols-2 sm:ml-auto">
+          <button
+            type="button"
+            className={[
+              actionButtonClasses,
+              inactiveActionClasses,
+              "border-b-0 border-r-0",
+              "text-danger",
+              "hover:border-danger hover:text-danger",
+              "sm:border-r",
+            ].join(" ")}
+            onClick={onHide}
+          >
+            hide
+          </button>
+
+          <div className="col-span-2 grid grid-cols-2 border-t border-border sm:col-span-4 lg:ml-auto lg:border-t-0">
             <button
               type="button"
               className={[
                 actionButtonClasses,
+                inactiveActionClasses,
                 "border-b-0 border-l-0 border-r",
-                "sm:min-w-28",
+                "lg:min-w-28",
               ].join(" ")}
               onClick={onPrevious}
               disabled={!canGoPrevious}
@@ -228,9 +307,11 @@ export function ShortcutCard({
                 "focus-visible:outline-none focus-visible:ring-2",
                 "focus-visible:ring-accent focus-visible:ring-offset-2",
                 "focus-visible:ring-offset-background",
-                "disabled:cursor-not-allowed disabled:bg-border-strong",
-                "disabled:text-text-muted disabled:opacity-60",
-                "sm:min-w-28",
+                "disabled:cursor-not-allowed",
+                "disabled:bg-border-strong",
+                "disabled:text-text-muted",
+                "disabled:opacity-60",
+                "lg:min-w-28",
               ].join(" ")}
               onClick={onNext}
               disabled={!canGoNext}
