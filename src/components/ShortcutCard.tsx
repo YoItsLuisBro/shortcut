@@ -8,6 +8,7 @@ interface ShortcutCardProps {
   totalShortcuts: number;
   operatingSystem: OperatingSystem;
   canGoPrevious: boolean;
+  canGoNext: boolean;
   onPrevious: () => void;
   onNext: () => void;
 }
@@ -44,6 +45,7 @@ export function ShortcutCard({
   totalShortcuts,
   operatingSystem,
   canGoPrevious,
+  canGoNext,
   onPrevious,
   onNext,
 }: ShortcutCardProps) {
@@ -105,7 +107,7 @@ export function ShortcutCard({
               /
             </span>
 
-            {formatOperatingSystem(operatingSystem)}
+            {formatOperatingSystem(activeKeySet.operatingSystem)}
           </p>
         </div>
 
@@ -226,9 +228,12 @@ export function ShortcutCard({
                 "focus-visible:outline-none focus-visible:ring-2",
                 "focus-visible:ring-accent focus-visible:ring-offset-2",
                 "focus-visible:ring-offset-background",
+                "disabled:cursor-not-allowed disabled:bg-border-strong",
+                "disabled:text-text-muted disabled:opacity-60",
                 "sm:min-w-28",
               ].join(" ")}
               onClick={onNext}
+              disabled={!canGoNext}
               aria-label="Show next random shortcut"
             >
               next

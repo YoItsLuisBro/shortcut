@@ -1,17 +1,53 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import {
-  FilterBar,
-  type ApplicationFilter,
-  type DifficultyFilter,
-} from "./components/FilterBar";
+import { FilterBar } from "./components/FilterBar";
 import { ShortcutCard } from "./components/ShortcutCard";
 import { shortcuts } from "./data/shortcuts";
-import type { Shortcut } from "./types/shortcut";
+import {
+  defaultDiscoveryPreferences,
+  loadDiscoveryPreferences,
+  saveDiscoveryPreferences,
+} from "./storage/discoveryPreferences";
+import type {
+  ApplicationFilter,
+  DifficultyFilter,
+  DiscoveryPreferences,
+  OperatingSystemFilter,
+} from "./types/preferences";
+import type { OperatingSystem, Shortcut } from "./types/shortcut";
 import { getRandomItem } from "./utils/shortcutSelection";
 
-function getInitialShortcutId() {
-  return getRandomItem(shortcuts)?.id ?? null;
+function getInitialPreferences() {
+  return loadDiscoveryPreferences();
+}
+
+function getMatchingShortcuts(preferences: DiscoveryPreferences) {
+  return shortcuts.filter((shortcut) => {
+    const matchesApplication =
+      preferences.application === "all" ||
+      shortcut.application === preferences.application;
+
+    const matchesDifficulty =
+      preferences.difficulty === "all" ||
+      shortcut.difficulty === preferences.difficulty;
+
+    const matchesOperatingSystem =
+      preferences.operatingSystem === "all" ||
+      shortcut.operatingSystems.includes(preferences.operatingSystem) ||
+      shortcut.operatingSystems.includes("universal");
+
+    return matchesApplication && matchesDifficulty && matchesOperatingSystem;
+  });
+}
+
+function getInitialState() {
+  const preferences = getInitialPreferences();
+  const matchingShortcuts = getMatchingShortcuts(preferences);
+
+  return {
+    preferences,
+    shortcutId: getRandomItem(matchingShortcuts)?.id ?? null,
+  };
 }
 
 function findShortcutById(
@@ -25,31 +61,45 @@ function findShortcutById(
   return shortcutCollection.find((shortcut) => shortcut.id === shortcutId);
 }
 
-export default function App() {
-  const [applicationFilter, setApplicationFilter] =
-    useState<ApplicationFilter>("all");
+function getDisplayOperatingSystem(
+  shortcut: Shortcut,
+  filter: OperatingSystemFilter,
+): OperatingSystem {
+  if (
+    filter !== "all" &&
+    shortcut.keys.some((keySet) => keySet.operatingSystem === filter)
+  ) {
+    return filter;
+  }
 
-  const [difficultyFilter, setDifficultyFilter] =
-    useState<DifficultyFilter>("all");
+  const universalKeySet = shortcut.keys.find(
+    (keySet) => keySet.operatingSystem === "universal",
+  );
+
+  if (universalKeySet) {
+    return "universal";
+  }
+
+  return shortcut.keys[0]?.operatingSystem ?? "universal";
+}
+
+const initialState = getInitialState();
+
+export default function App() {
+  const [preferences, setPreferences] = useState<DiscoveryPreferences>(
+    initialState.preferences,
+  );
 
   const [currentShortcutId, setCurrentShortcutId] = useState<string | null>(
-    getInitialShortcutId,
+    initialState.shortcutId,
   );
 
   const [shortcutHistory, setShortcutHistory] = useState<string[]>([]);
 
-  const filteredShortcuts = useMemo(() => {
-    return shortcuts.filter((shortcut) => {
-      const matchesApplication =
-        applicationFilter === "all" ||
-        shortcut.application === applicationFilter;
-
-      const matchesDifficulty =
-        difficultyFilter === "all" || shortcut.difficulty === difficultyFilter;
-
-      return matchesApplication && matchesDifficulty;
-    });
-  }, [applicationFilter, difficultyFilter]);
+  const filteredShortcuts = useMemo(
+    () => getMatchingShortcuts(preferences),
+    [preferences],
+  );
 
   const currentShortcut =
     findShortcutById(filteredShortcuts, currentShortcutId) ??
@@ -61,20 +111,21 @@ export default function App() {
       )
     : -1;
 
-  const selectShortcutForFilters = useCallback(
-    (nextApplication: ApplicationFilter, nextDifficulty: DifficultyFilter) => {
-      const matchingShortcuts = shortcuts.filter((shortcut) => {
-        const matchesApplication =
-          nextApplication === "all" || shortcut.application === nextApplication;
+  const displayOperatingSystem = currentShortcut
+    ? getDisplayOperatingSystem(currentShortcut, preferences.operatingSystem)
+    : "universal";
 
-        const matchesDifficulty =
-          nextDifficulty === "all" || shortcut.difficulty === nextDifficulty;
+  useEffect(() => {
+    saveDiscoveryPreferences(preferences);
+  }, [preferences]);
 
-        return matchesApplication && matchesDifficulty;
-      });
+  const applyPreferences = useCallback(
+    (nextPreferences: DiscoveryPreferences) => {
+      const matchingShortcuts = getMatchingShortcuts(nextPreferences);
 
       const nextShortcut = getRandomItem(matchingShortcuts);
 
+      setPreferences(nextPreferences);
       setCurrentShortcutId(nextShortcut?.id ?? null);
       setShortcutHistory([]);
     },
@@ -82,28 +133,38 @@ export default function App() {
   );
 
   const handleApplicationChange = useCallback(
-    (nextApplication: ApplicationFilter) => {
-      setApplicationFilter(nextApplication);
-
-      selectShortcutForFilters(nextApplication, difficultyFilter);
+    (application: ApplicationFilter) => {
+      applyPreferences({
+        ...preferences,
+        application,
+      });
     },
-    [difficultyFilter, selectShortcutForFilters],
+    [applyPreferences, preferences],
   );
 
   const handleDifficultyChange = useCallback(
-    (nextDifficulty: DifficultyFilter) => {
-      setDifficultyFilter(nextDifficulty);
-
-      selectShortcutForFilters(applicationFilter, nextDifficulty);
+    (difficulty: DifficultyFilter) => {
+      applyPreferences({
+        ...preferences,
+        difficulty,
+      });
     },
-    [applicationFilter, selectShortcutForFilters],
+    [applyPreferences, preferences],
+  );
+
+  const handleOperatingSystemChange = useCallback(
+    (operatingSystem: OperatingSystemFilter) => {
+      applyPreferences({
+        ...preferences,
+        operatingSystem,
+      });
+    },
+    [applyPreferences, preferences],
   );
 
   const handleResetFilters = useCallback(() => {
-    setApplicationFilter("all");
-    setDifficultyFilter("all");
-    selectShortcutForFilters("all", "all");
-  }, [selectShortcutForFilters]);
+    applyPreferences(defaultDiscoveryPreferences);
+  }, [applyPreferences]);
 
   const handleNextShortcut = useCallback(() => {
     if (!currentShortcut || filteredShortcuts.length <= 1) {
@@ -204,12 +265,14 @@ export default function App() {
       <main className="mx-auto flex w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
         <div className="flex w-full flex-col justify-center">
           <FilterBar
-            application={applicationFilter}
-            difficulty={difficultyFilter}
+            application={preferences.application}
+            difficulty={preferences.difficulty}
+            operatingSystem={preferences.operatingSystem}
             resultCount={filteredShortcuts.length}
             totalCount={shortcuts.length}
             onApplicationChange={handleApplicationChange}
             onDifficultyChange={handleDifficultyChange}
+            onOperatingSystemChange={handleOperatingSystemChange}
             onReset={handleResetFilters}
           />
 
@@ -225,16 +288,17 @@ export default function App() {
                 shortcut={currentShortcut}
                 shortcutNumber={currentShortcutIndex + 1}
                 totalShortcuts={filteredShortcuts.length}
-                operatingSystem="windows"
+                operatingSystem={displayOperatingSystem}
                 canGoPrevious={shortcutHistory.length > 0}
+                canGoNext={filteredShortcuts.length > 1}
                 onPrevious={handlePreviousShortcut}
                 onNext={handleNextShortcut}
               />
 
               <div className="mt-5 flex flex-col gap-3 text-xs text-text-muted sm:flex-row sm:items-center sm:justify-between">
                 <p>
-                  <span className="text-text-secondary">tip:</span> filters keep
-                  discovery focused
+                  <span className="text-text-secondary">tip:</span> your filters
+                  are saved locally
                 </p>
 
                 <div className="hidden items-center gap-4 md:flex">
@@ -273,8 +337,8 @@ export default function App() {
               </h1>
 
               <p className="mt-4 max-w-2xl text-sm leading-7 text-text-secondary">
-                Try another application or difficulty level, or reset the
-                filters to return to the complete shortcut collection.
+                Try another application, difficulty, or operating system, or
+                reset the filters to return to the default Windows collection.
               </p>
 
               <button

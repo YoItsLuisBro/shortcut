@@ -1,19 +1,20 @@
+import type { ChangeEvent } from "react";
+
 import type {
-  ShortcutApplication,
-  ShortcutDifficulty,
-} from "../types/shortcut";
-
-export type ApplicationFilter = "all" | ShortcutApplication;
-
-export type DifficultyFilter = "all" | ShortcutDifficulty;
+  ApplicationFilter,
+  DifficultyFilter,
+  OperatingSystemFilter,
+} from "../types/preferences";
 
 interface FilterBarProps {
   application: ApplicationFilter;
   difficulty: DifficultyFilter;
+  operatingSystem: OperatingSystemFilter;
   resultCount: number;
   totalCount: number;
   onApplicationChange: (application: ApplicationFilter) => void;
   onDifficultyChange: (difficulty: DifficultyFilter) => void;
+  onOperatingSystemChange: (operatingSystem: OperatingSystemFilter) => void;
   onReset: () => void;
 }
 
@@ -64,9 +65,32 @@ const difficultyOptions: FilterOption<DifficultyFilter>[] = [
   },
 ];
 
+const operatingSystemOptions: FilterOption<OperatingSystemFilter>[] = [
+  {
+    value: "all",
+    label: "All operating systems",
+  },
+  {
+    value: "windows",
+    label: "Windows",
+  },
+  {
+    value: "macos",
+    label: "macOS",
+  },
+  {
+    value: "linux",
+    label: "Linux",
+  },
+  {
+    value: "universal",
+    label: "Universal",
+  },
+];
+
 const selectClasses = [
   "min-h-11 w-full appearance-none rounded-none",
-  "border border-border bg-surface px-3 py-2",
+  "border border-border bg-surface px-3 py-2 pr-10",
   "text-sm text-text-primary",
   "transition-colors",
   "hover:border-border-strong",
@@ -78,22 +102,29 @@ const selectClasses = [
 export function FilterBar({
   application,
   difficulty,
+  operatingSystem,
   resultCount,
   totalCount,
   onApplicationChange,
   onDifficultyChange,
+  onOperatingSystemChange,
   onReset,
 }: FilterBarProps) {
-  const hasActiveFilters = application !== "all" || difficulty !== "all";
+  const hasActiveFilters =
+    application !== "all" ||
+    difficulty !== "all" ||
+    operatingSystem !== "windows";
 
-  function handleApplicationChange(
-    event: React.ChangeEvent<HTMLSelectElement>,
-  ) {
+  function handleApplicationChange(event: ChangeEvent<HTMLSelectElement>) {
     onApplicationChange(event.target.value as ApplicationFilter);
   }
 
-  function handleDifficultyChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  function handleDifficultyChange(event: ChangeEvent<HTMLSelectElement>) {
     onDifficultyChange(event.target.value as DifficultyFilter);
+  }
+
+  function handleOperatingSystemChange(event: ChangeEvent<HTMLSelectElement>) {
+    onOperatingSystemChange(event.target.value as OperatingSystemFilter);
   }
 
   return (
@@ -101,7 +132,7 @@ export function FilterBar({
       className="mb-6 border border-border bg-surface"
       aria-labelledby="filter-heading"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3 border-border px-4 py-3 sm:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
         <div>
           <h2
             id="filter-heading"
@@ -138,7 +169,7 @@ export function FilterBar({
         </button>
       </div>
 
-      <div className="grid gap-4 px-4 py-4 sm:grid-cols-2 sm:px-5">
+      <div className="grid gap-4 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-3">
         <label className="block">
           <span className="mb-2 block text-xs font-medium uppercase tracking-[0.14em] text-text-muted">
             application
@@ -146,7 +177,7 @@ export function FilterBar({
 
           <div className="relative">
             <select
-              className={`${selectClasses} pr-10`}
+              className={selectClasses}
               value={application}
               onChange={handleApplicationChange}
             >
@@ -173,11 +204,38 @@ export function FilterBar({
 
           <div className="relative">
             <select
-              className={`${selectClasses} pr-10`}
+              className={selectClasses}
               value={difficulty}
               onChange={handleDifficultyChange}
             >
               {difficultyOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
+            <span
+              className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-text-muted"
+              aria-hidden="true"
+            >
+              ▾
+            </span>
+          </div>
+        </label>
+
+        <label className="block sm:col-span-2 lg:col-span-1">
+          <span className="mb-2 block text-xs font-medium uppercase tracking-[0.14em] text-text-muted">
+            operating system
+          </span>
+
+          <div className="relative">
+            <select
+              className={selectClasses}
+              value={operatingSystem}
+              onChange={handleOperatingSystemChange}
+            >
+              {operatingSystemOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
